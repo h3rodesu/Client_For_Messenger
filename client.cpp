@@ -29,7 +29,11 @@ void CreateRenderTarget();
 void CleanupRenderTarget();
 LRESULT WINAPI WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
 std::recursive_mutex mtx;
-
+struct UserChats {
+    int room_id;
+    int sobes_id;
+    std::string sobes_name;
+};
 Receive read;
 struct ChatState {
     SOCKET UserSocket = INVALID_SOCKET;
@@ -43,6 +47,8 @@ struct ChatState {
     int currentRoom = 0;
     bool logout = false;
     bool reconect=false;
+    std::vector<UserChats>chatsVec;
+    int chatCounter;
 };
 void Learning(ChatState&state) {//Функция дял чтения,пока тут
  //   std::string welcome = read.receive(UserSocket);
@@ -82,7 +88,26 @@ void Learning(ChatState&state) {//Функция дял чтения,пока т
      send(state.UserSocket, chooseroom.c_str(), (int)chooseroom.size(), 0);
 
  }
- 
+     if (getmessages.find("GET_CHATS|") != std::string::npos) {
+         std::lock_guard<std::recursive_mutex>chatslock(mtx);
+         std::string userChats = getmessages.substr(10);
+         std::stringstream ss(userChats);
+         std::string token;//временная строка для парсинга
+         std::vector<std::string>tokens;//временный вектор дял парсинга
+         while (std::getline(ss, token, '|')) {//разобрать строку 
+                 tokens.push_back(token);
+            }
+         state.chatsVec.clear();//на всякий если с клиента зайдет другой пользователь
+         for (int i = 0; i + 2 < tokens.size(); i += 3) {//закину в кэш
+             UserChats chat;
+            
+             chat.room_id = std::stoi(tokens[i]);//
+             chat.sobes_id = std::stoi(tokens[i + 1]);
+             chat.sobes_name = (tokens[i + 2]);
+             state.chatsVec.push_back(chat);
+             state.chatCounter++;
+         }
+     }
  else {
      {
          std::lock_guard<std::recursive_mutex>myLock(mtx);
@@ -104,7 +129,7 @@ void Learning(ChatState&state) {//Функция дял чтения,пока т
                 continue;//след итерация на ресив
             }
             state.chatHistory += getmessages ;
-        
+
         }
         else {
             state.chatHistory += "SYSTEM:Connection Error\n";//тк если врнклось 0 байт то коннекта нет
@@ -180,7 +205,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
     
     ChatState states;
     std::jthread learn;
-    bool isConnected = ConToServ(states.UserSocket,states);
+    bool isConnected = ConToServ(states.UserSocket,states); 
     if (isConnected == true) {
         states.reconect = true;
         learn = std::jthread([&states]() {
@@ -241,14 +266,34 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
         if (!states.running) {
             break;
         }
-        // 2. ПОДГОТОВКА НОВОГО ГРАФИЧЕСКОГО КАДРА
+        // 2. ПОДГОТОВКА НОВГО ГРАФИЧЕСКОГО КАДРА
         ImGui_ImplDX11_NewFrame();  // Сброс состояния рендера DirectX
-        ImGui_ImplWin32_NewFrame(); // Сброс состояния окна Windows
-        ImGui::NewFrame();          // Старт сборки нового кадра ImGui
+        ImGui_ImplWin32_NewFrame();
+       
+        ImGui::NewFrame();
+       
+        ImGui::SetNextWindowPos(ImVec2(0.0f, 0.0f), ImGuiCond_Always);
+        ImGui::SetNextWindowSize(ImGui::GetIO().DisplaySize, ImGuiCond_Always);
+
+        ImGuiWindowFlags full_screen_flags = ImGuiWindowFlags_NoResize |
+            ImGuiWindowFlags_NoMove |
+            ImGuiWindowFlags_NoCollapse |
+            ImGuiWindowFlags_NoTitleBar;
+      
+      
+        // Сброс состояния окна Windows
+                // Старт сборки нового кадра ImGui
 
         // 3. отрисовка интерфейса
         if (!states.isAuthorized) {
-
+            ImVec2 screenSize = ImGui::GetIO().DisplaySize;//размер всего экрана программы
+            ImVec2 boxSize = ImVec2(600.0f, 450.0f);//
+            ImVec2 boxPos = ImVec2((screenSize.x - boxSize.x) * 0.5f, (screenSize.y - boxSize.y) * 0.5f);
+            ImGui::SetNextWindowPos(boxPos, ImGuiCond_Always);
+            ImGui::SetNextWindowSize(boxSize, ImGuiCond_Always);
+            ImGuiWindowFlags auth_flags = ImGuiWindowFlags_NoResize |
+                ImGuiWindowFlags_NoMove |
+                ImGuiWindowFlags_NoCollapse;
             switch (statusWindow) {
             case (FirstStat::CHOOSE):
                 ImGui::Begin("Welcome!");
@@ -322,6 +367,8 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
             }
         }
         else if (states.isAuthorized == true) {//переход на след.окно
+            ImGui::SetNextWindowPos(ImVec2(0.0f, 0.0f), ImGuiCond_Always);
+            ImGui::SetNextWindowSize(ImGui::GetIO().DisplaySize, ImGuiCond_Always);
             ImGui::Begin("LOBBY");
 
             ImGui::Separator();
@@ -346,13 +393,14 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
                 ImGui::Text("Found: %s", mbw.c_str());
                 ImGui::SameLine();
                 if (ImGui::Button("Start chatting", ImVec2(100, 0))) {
-                    int userid = states.cacheVec.front().second;//айди собеседника
-                    std::string startls = "START_LS|" + std::to_string(userid) + "\n";//создается комната в бд
+                    int sobesid = states.cacheVec.front().second;//айди собеседника
+                    std::string startls = "START_LS|" + std::to_string(sobesid) + "\n";//создается комната в бд
                     send(states.UserSocket, startls.c_str(), (int)startls.size(), 0);
                     states.userisfind = false;//послк поиска плашка уберется
                 }
             }
         }
+            ImGui::BeginChild("NotChooseChat",ImVec2(800, -40),ImGuiChildFlags_None);
             if (states.currentRoom == 0) {
 
                 ImGui::Text("Please select a chat...");
@@ -361,7 +409,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
             else {
 
                 ImGui::Separator();
-                ImGui::BeginChild("ScrollZone", ImVec2(0, -60), ImGuiChildFlags_Borders);
+                ImGui::BeginChild("ScrollZone", ImVec2(800, -60), ImGuiChildFlags_Borders);
 
                 {
                     std::lock_guard<std::recursive_mutex>hismtx(mtx);
@@ -404,7 +452,33 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
                     }
                 }
             }
-                if (ImGui::Button("log out")) {
+
+                     ImGui::EndChild();//закрылся  NotChooseChat
+         ImGui::SameLine();
+                ImGui::BeginChild("ChatPannel", ImVec2(0.0f, -40.0f), ImGuiChildFlags_Borders);
+                ImGui::TextColored(ImVec4(0.2f, 0.8f, 1.0f, 1.0f), "Your chats:");
+                ImGui::Separator();
+                {
+                    std::lock_guard<std::recursive_mutex>chatsLock(mtx);//возможно приедется сделать отльеный мьютекс
+                    if (states.chatsVec.empty()) {
+                        ImGui::TextColored(ImVec4(0.5f, 0.5f, 0.5f, 1.0f), "Start Chatting!");
+                    }
+                    else {
+                        ImGui::PushStyleVar(ImGuiStyleVar_ButtonTextAlign, ImVec2(0.0f, 0.5f));//в кнопках текст выравнивается по левому краю
+                        for (const auto& row : states.chatsVec) {
+                            if (ImGui::Button(row.sobes_name.c_str(),ImVec2(422,50))) {
+                                std::string sendRoom = "CURRENT_ROOM|" + std::to_string(row.room_id) + "\n";
+                                send(states.UserSocket, sendRoom.c_str(), (int)sendRoom.size(), 0);
+                                states.chatHistory.clear();
+                            states.currentRoom=row.room_id;
+                            }
+                        }
+                        ImGui::PopStyleVar();
+                    }
+                }
+                ImGui::EndChild();//закрылся ScrollZone
+            
+                if (ImGui::Button("log out",ImVec2(100,30))) {
                     std::string quitstr = "quit\n";
                     {
                         std::lock_guard<std::recursive_mutex>qmtxt(mtx);
@@ -425,10 +499,9 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
 
 
 
-
             // 4. ОЧИСТКА СТАРЫХ ДАННЫХ С ЭКРАНА И ВЫВОД НОВОГО КАДРА (РЕНДЕРИНГ)
             ImGui::Render(); // Расчет геометрии интерфейса ImGui
-            const float clear_color[4] = { 0.15f, 0.15f, 0.15f, 1.00f }; // сделал массивом из 4-х элементов RGBA цвет фона
+            const float clear_color[4] = { 0.00f, 0.00f, 0.00f, 1.00f }; // сделал массивом из 4-х элементов RGBA цвет фона
 
             g_pd3dDeviceContext->OMSetRenderTargets(1, &g_mainRenderTargetView, nullptr); // Выбор буфера кадра
             g_pd3dDeviceContext->ClearRenderTargetView(g_mainRenderTargetView, clear_color); // Очистка экрана цветом фона
