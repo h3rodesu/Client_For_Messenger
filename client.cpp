@@ -479,7 +479,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
                 ImGui::EndChild();//закрылся ScrollZone
             
                 if (ImGui::Button("log out",ImVec2(100,30))) {
-                    std::string quitstr = "quit\n";
+                    std::string quitstr = "QUIT|\n";
                     {
                         std::lock_guard<std::recursive_mutex>qmtxt(mtx);
                         send(states.UserSocket, quitstr.c_str(), (int)quitstr.size(), 0);
