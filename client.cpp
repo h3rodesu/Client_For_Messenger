@@ -17,6 +17,7 @@
 #include "imgui_impl_win32.h"
 #include "imgui_impl_dx11.h"
 
+#include "MediaClient.h"
 static ID3D11Device* g_pd3dDevice = nullptr;
 static ID3D11DeviceContext* g_pd3dDeviceContext = nullptr;
 static IDXGISwapChain* g_pSwapChain = nullptr;
@@ -450,6 +451,13 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
                             memset(message, 0, sizeof(message));//мемсетаем для очистки буффера
                         }
                     }
+                }
+            }
+            ImGui::SameLine;
+            if (ImGui::Button("send photo")) {
+                std::string path = Media::OpenFileDialog(hwnd);//открыть проводник
+                if (!path.empty()) {
+                    Media::sendImg(path, states.UserSocket);
                 }
             }
 
