@@ -49,6 +49,7 @@ struct ChatState {
     bool reconect=false;
     std::vector<UserChats>chatsVec;
     int chatCounter;
+    bool isout = false;
 };
 void Learning(ChatState&state) {//Функция дял чтения,пока тут
  //   std::string welcome = read.receive(UserSocket);
@@ -101,7 +102,7 @@ void Learning(ChatState&state) {//Функция дял чтения,пока т
          for (int i = 0; i + 2 < tokens.size(); i += 3) {//закину в кэш
              UserChats chat;
             
-             chat.room_id = std::stoi(tokens[i]);//
+             chat.room_id = std::stoi(tokens[i]);
              chat.sobes_id = std::stoi(tokens[i + 1]);
              chat.sobes_name = (tokens[i + 2]);
              state.chatsVec.push_back(chat);
@@ -128,8 +129,9 @@ void Learning(ChatState&state) {//Функция дял чтения,пока т
                 state.waitres = false;
                 continue;//след итерация на ресив
             }
-            state.chatHistory += getmessages ;
-
+            if (getmessages.find("GET_CHATS|") == std::string::npos) {
+                state.chatHistory += getmessages;
+            }
         }
         else {
             state.chatHistory += "SYSTEM:Connection Error\n";//тк если врнклось 0 байт то коннекта нет
@@ -330,9 +332,15 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
                     }
                 }
                 if (!states.errorstat.empty()) {
-                    ImGui::TextColored(ImVec4(1.0f, 0.4f, 0.4f, 1.0f), states.errorstat.c_str());
+                    //  ImGui::TextColored(ImVec4(1.0f, 0.4f, 0.4f, 1.0f), states.errorstat.c_str());
+                    if (states.isout == true) {
+                        std::string error = "Please,login into your account";
+                        ImGui::TextColored(ImVec4(1.0f, 0.4f, 0.4f, 1.0f), error.c_str());
+                    }else{
+                        std::string error = "something went wrong";
+                        ImGui::TextColored(ImVec4(1.0f, 0.4f, 0.4f, 1.0f), error.c_str());
+                    }
                 }
-
                 ImGui::End();
                 break;
             }
@@ -486,7 +494,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
                     }
                     states.logout = true;
                     states.isAuthorized = false; // возврат к предыдущему состоянию
-                
+                    states.isout = true;
                 }
 
                 ImGui::End();
