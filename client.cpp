@@ -8,6 +8,7 @@
 #include<thread>
 #include<mutex>
 #include<chrono>
+#include<condition_variable>
 
 #include <windows.h>
 #include <d3d11.h>
@@ -29,6 +30,8 @@ void CreateRenderTarget();
 void CleanupRenderTarget();
 LRESULT WINAPI WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
 std::recursive_mutex mtx;
+std::mutex recmtx;
+std::condition_variable cv;
 struct UserChats {
     int room_id;
     int sobes_id;
@@ -50,6 +53,7 @@ struct ChatState {
     std::vector<UserChats>chatsVec;
     int chatCounter;
     bool isout = false;
+    bool isConecting = false;
 };
 void Learning(ChatState&state) {//Функция дял чтения,пока тут
  //   std::string welcome = read.receive(UserSocket);
@@ -180,7 +184,6 @@ bool ConToServ(SOCKET& servsock, ChatState& state) {
                 closesocket(servsock);//логика с удалением та же
                 servsock = INVALID_SOCKET;
                 return false;//не подключился
-                std::this_thread::sleep_for(std::chrono::seconds(3));
                 //continue;//пока будет тут до логики реконнекта
             }
        
@@ -252,18 +255,44 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
                 states.running = false; // Выход из цикла при закрытии окна
             }
         }
-        if (states.UserSocket == INVALID_SOCKET) {
+        if (states.UserSocket == INVALID_SOCKET && states.isout==false && states.isConecting==false) {
            /* std::string qstr = "QUIT\n";
             send(states.UserSocket, qstr.c_str(), (int)qstr.size(), 0);
             closesocket(states.UserSocket);
             states.UserSocket = INVALID_SOCKET;*/
+
+
+            //    states.isAuthorized = false;
+            //    std::this_thread::sleep_for(std::chrono::seconds(3));
+            //    if (ConToServ(states.UserSocket,states)==true) {//если соединение восстановлено
+            //        learn = std::jthread([&states]() {
+            //            Learning(states);
+            //            });
+            //}
             states.isAuthorized = false;
-            std::this_thread::sleep_for(std::chrono::seconds(3));
-            if (ConToServ(states.UserSocket,states)==true) {//если соединение восстановлено
-                learn = std::jthread([&states]() {
-                    Learning(states);
-                    });
-        }
+            states.errorstat = "Something went wrong...";
+            states.isConecting = true;
+            std::thread recon([&learn,&states]() {
+                {
+                    std::unique_lock<std::mutex>lockRecon(recmtx);
+                    cv.wait_for(lockRecon, std::chrono::seconds(3));//ожидание 3 сек между реконектами
+                    closesocket(states.UserSocket);
+                    states.UserSocket = INVALID_SOCKET;
+                   // lockRecon.unlock();
+                    if (ConToServ(states.UserSocket, states) == true) {
+                        learn = std::jthread([&states]() {
+                            Learning(states);
+                            });
+                    }else{
+                        states.isConecting = false;
+                        return;
+                    }
+                    states.isConecting = false;
+                
+                }
+                });
+          
+            recon.detach();
         }
         if (!states.running) {
             break;
@@ -288,6 +317,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
 
         // 3. отрисовка интерфейса
         if (!states.isAuthorized) {
+            states.isout = false;
             ImVec2 screenSize = ImGui::GetIO().DisplaySize;//размер всего экрана программы
             ImVec2 boxSize = ImVec2(600.0f, 450.0f);//
             ImVec2 boxPos = ImVec2((screenSize.x - boxSize.x) * 0.5f, (screenSize.y - boxSize.y) * 0.5f);
@@ -337,8 +367,8 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
                         std::string error = "Please,login into your account";
                         ImGui::TextColored(ImVec4(1.0f, 0.4f, 0.4f, 1.0f), error.c_str());
                     }else{
-                        std::string error = "something went wrong";
-                        ImGui::TextColored(ImVec4(1.0f, 0.4f, 0.4f, 1.0f), error.c_str());
+                        
+                        ImGui::TextColored(ImVec4(1.0f, 0.4f, 0.4f, 1.0f), states.errorstat.c_str());
                     }
                 }
                 ImGui::End();
